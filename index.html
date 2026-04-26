@@ -1,37 +1,194 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <link rel="manifest" href="manifest.json">
+  <title>Hanhaara Health Dashboard</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
 </head>
-<body class="bg-gray-50">
+<body class="bg-slate-50 min-h-screen font-sans">
+
+  <div id="status-indicator" class="fixed top-0 w-full text-[10px] text-center font-bold py-1 bg-green-500 text-white uppercase tracking-tighter z-50">
+    System Online
+  </div>
+
+  <div class="max-w-md mx-auto px-4 pt-10 pb-20">
+    
+    <div id="view-dashboard" class="view-section space-y-6">
+      <header class="mb-8">
+        <h1 class="text-3xl font-black text-slate-800">Health Portal</h1>
+        <p class="text-slate-500">Search or Register to begin</p>
+      </header>
+
+      <div class="bg-white p-6 rounded-3xl shadow-xl shadow-slate-200 border border-slate-100">
+        <label class="block text-sm font-bold text-slate-700 mb-2">Find Client by ID</label>
+        <div class="flex gap-2">
+          <input type="text" id="searchId" placeholder="ID Card No..." class="flex-1 bg-slate-100 border-none rounded-2xl p-4 focus:ring-2 focus:ring-blue-500 outline-none uppercase font-bold">
+          <button onclick="handleSearch()" class="bg-blue-600 text-white p-4 rounded-2xl hover:bg-blue-700 transition shadow-lg shadow-blue-200">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+          </button>
+        </div>
+      </div>
+
+      <div id="search-result" class="hidden animate-in fade-in duration-300">
+        </div>
+    </div>
+
+    <div id="view-register" class="view-section hidden space-y-6">
+      <button onclick="showView('dashboard')" class="text-blue-600 font-bold flex items-center gap-1">← Back</button>
+      <h2 class="text-2xl font-black text-slate-800">New Registration</h2>
+      <form id="regForm" class="bg-white p-6 rounded-3xl shadow-xl space-y-4">
+        <input type="text" id="regId" readonly class="w-full bg-slate-50 border-none rounded-xl p-4 font-bold text-slate-400">
+        <input type="text" id="regName" placeholder="Full Name" required class="w-full bg-slate-100 border-none rounded-xl p-4 focus:ring-2 focus:ring-blue-500 outline-none">
+        <button type="submit" class="w-full bg-blue-600 text-white font-bold py-4 rounded-2xl">Create Client Profile</button>
+      </form>
+    </div>
+
+    <div id="view-visit" class="view-section hidden space-y-6">
+      <button onclick="showView('dashboard')" class="text-blue-600 font-bold flex items-center gap-1">← Cancel</button>
+      <div class="bg-blue-600 p-6 rounded-3xl text-white">
+        <p class="opacity-80 text-xs font-bold uppercase">Recording Visit for:</p>
+        <h2 id="visit-client-name" class="text-2xl font-black">--</h2>
+        <p id="visit-client-id" class="text-sm font-mono opacity-80 mt-1">--</p>
+      </div>
+
+      <form id="visitForm" class="bg-white p-6 rounded-3xl shadow-xl space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-400 uppercase mb-1 ml-1">Service</label>
+          <select id="visitService" class="w-full bg-slate-100 border-none rounded-xl p-4 focus:ring-2 focus:ring-blue-500 outline-none appearance-none">
+            <option>General Checkup</option>
+            <option>Vaccination</option>
+            <option>Nutrition Screening</option>
+            <option>Emergency</option>
+          </select>
+        </div>
+        <textarea id="visitNotes" placeholder="Clinical Notes..." class="w-full bg-slate-100 border-none rounded-xl p-4 h-32 focus:ring-2 focus:ring-blue-500 outline-none"></textarea>
+        <button type="submit" class="w-full bg-blue-600 text-white font-bold py-4 rounded-2xl shadow-lg">Save Visit to Record</button>
+      </form>
+    </div>
+
+  </div>
+
   <script>
-    // Register Service Worker for PWA
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js');
+    const GAS_URL = "YOUR_APPS_SCRIPT_URL";
+
+    // View Management
+    function showView(viewId) {
+      document.querySelectorAll('.view-section').forEach(v => v.classList.add('hidden'));
+      document.getElementById('view-' + viewId).classList.remove('hidden');
     }
 
-    const GAS_URL = "YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL";
+    // Search Logic
+    async function handleSearch() {
+      const id = document.getElementById('searchId').value.toUpperCase().trim();
+      if(!id) return;
 
-    async function sendToGoogle(data) {
-      // Since we are outside of GAS environment (on GitHub), 
-      // we use fetch() instead of google.script.run
-      try {
-        const response = await fetch(GAS_URL, {
-          method: "POST",
-          mode: "no-cors", // Required for cross-origin GAS requests
-          cache: "no-cache",
-          body: JSON.stringify(data)
-        });
-        return true;
-      } catch (err) {
-        console.error("Sync failed", err);
-        return false;
+      const resultDiv = document.getElementById('search-result');
+      resultDiv.innerHTML = '<div class="text-center p-4">Checking database...</div>';
+      resultDiv.classList.remove('hidden');
+
+      // Check LocalForage first (Offline First)
+      const cachedClient = await localforage.getItem('client_' + id);
+      
+      if(cachedClient) {
+        renderSearchResult(cachedClient);
+      } else if(navigator.onLine) {
+        // Fetch from Google Apps Script
+        const response = await fetch(`${GAS_URL}?action=search&id=${id}`);
+        const data = await response.json();
+        if(data.found) {
+          await localforage.setItem('client_' + id, data.client);
+          renderSearchResult(data.client);
+        } else {
+          renderNoClient(id);
+        }
+      } else {
+        renderNoClient(id);
       }
     }
 
-    // Add your Form Submit and LocalForage logic here...
+    function renderSearchResult(client) {
+      document.getElementById('search-result').innerHTML = `
+        <div class="bg-green-50 border-2 border-green-200 p-6 rounded-3xl flex justify-between items-center">
+          <div>
+            <p class="text-xs font-bold text-green-600 uppercase">Client Found</p>
+            <h3 class="text-xl font-black text-slate-800">${client.name}</h3>
+          </div>
+          <button onclick="openVisit('${client.id}', '${client.name}')" class="bg-green-600 text-white font-bold px-4 py-2 rounded-xl text-sm">Add Visit</button>
+        </div>`;
+    }
+
+    function renderNoClient(id) {
+      document.getElementById('search-result').innerHTML = `
+        <div class="bg-orange-50 border-2 border-orange-200 p-6 rounded-3xl space-y-4">
+          <p class="text-sm font-medium text-orange-700 font-bold">No record found for "${id}"</p>
+          <button onclick="openRegistration('${id}')" class="w-full bg-orange-600 text-white font-bold py-3 rounded-xl">Register New Client</button>
+        </div>`;
+    }
+
+    // Registration Flow
+    function openRegistration(id) {
+      document.getElementById('regId').value = id;
+      showView('register');
+    }
+
+    document.getElementById('regForm').onsubmit = async (e) => {
+      e.preventDefault();
+      const client = {
+        action: 'register',
+        id: document.getElementById('regId').value,
+        name: document.getElementById('regName').value
+      };
+      
+      await localforage.setItem('client_' + client.id, client); // Save locally
+      if(navigator.onLine) await sendToGas(client);
+      openVisit(client.id, client.name);
+    };
+
+    // Visit Flow
+    function openVisit(id, name) {
+      document.getElementById('visit-client-name').innerText = name;
+      document.getElementById('visit-client-id').innerText = id;
+      showView('visit');
+    }
+
+    document.getElementById('visitForm').onsubmit = async (e) => {
+      e.preventDefault();
+      const visitData = {
+        action: 'visit',
+        id: document.getElementById('visit-client-id').innerText,
+        name: document.getElementById('visit-client-name').innerText,
+        service: document.getElementById('visitService').value,
+        notes: document.getElementById('visitNotes').value,
+        timestamp: new Date().toISOString()
+      };
+
+      if(navigator.onLine) {
+        await sendToGas(visitData);
+        alert("Visit Synced!");
+      } else {
+        const queue = await localforage.getItem('sync_queue') || [];
+        queue.push(visitData);
+        await localforage.setItem('sync_queue', queue);
+        alert("Saved Offline!");
+      }
+      showView('dashboard');
+      e.target.reset();
+    };
+
+    async function sendToGas(data) {
+      return fetch(GAS_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify(data) });
+    }
+
+    // SW & Sync
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+    window.addEventListener('online', async () => {
+      document.getElementById('status-indicator').className = "fixed top-0 w-full text-[10px] text-center font-bold py-1 bg-blue-500 text-white uppercase tracking-tighter z-50";
+      document.getElementById('status-indicator').innerText = "Syncing Data...";
+      // Logic for draining sync_queue here...
+    });
   </script>
 </body>
 </html>
