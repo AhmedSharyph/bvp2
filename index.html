@@ -1,1 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <link rel="manifest" href="manifest.json">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
+</head>
+<body class="bg-gray-50">
+  <script>
+    // Register Service Worker for PWA
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js');
+    }
 
+    const GAS_URL = "YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL";
+
+    async function sendToGoogle(data) {
+      // Since we are outside of GAS environment (on GitHub), 
+      // we use fetch() instead of google.script.run
+      try {
+        const response = await fetch(GAS_URL, {
+          method: "POST",
+          mode: "no-cors", // Required for cross-origin GAS requests
+          cache: "no-cache",
+          body: JSON.stringify(data)
+        });
+        return true;
+      } catch (err) {
+        console.error("Sync failed", err);
+        return false;
+      }
+    }
+
+    // Add your Form Submit and LocalForage logic here...
+  </script>
+</body>
+</html>
